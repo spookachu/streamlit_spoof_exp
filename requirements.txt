@@ -1,0 +1,6 @@
+streamlit
+matplotlib
+openpyxl
+streamlit-extras
+PyGithub
+pylsl
