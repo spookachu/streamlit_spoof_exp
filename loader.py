@@ -85,8 +85,10 @@ class Loader:
 
         wb = load_workbook(self.stimuli_excel)
         sheet = wb.active
- 
-        for i, row in enumerate(sheet.iter_rows(min_row=2, values_only=True)):
+        data = list(sheet.iter_rows(min_row=2, values_only=True))
+        random.shuffle(data)
+        
+        for i, row in enumerate(data):
             try:
                 video_file = row[8]
                 spoof_times = row[5]
@@ -111,5 +113,4 @@ class Loader:
             trial["trial_number"] = i + 1
             trials.append(trial)
 
-        random.shuffle(trials)
         return trials

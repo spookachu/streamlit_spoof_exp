@@ -49,15 +49,24 @@ def init_session_state(test_subsample=None):
     st.session_state.refresh_occurred = st.session_state.get("refresh_occurred", False)
 
     if "all_trials" not in st.session_state:
-        trials = st.session_state.loader.load_trials()
-        if test_subsample:
-            trials = trials[:test_subsample]
-        st.session_state.all_trials = trials
-        storage.save_session_data()
+        saved_trials = storage.session_data.get("all_trials")
+        
+        if saved_trials:
+            print("Restoring trials from saved session")
+            st.session_state.all_trials = saved_trials
+        else:
+            trials = st.session_state.loader.load_trials()
+            if test_subsample:
+                trials = trials[:test_subsample]
+            st.session_state.all_trials = trials
+            
+            storage.session_data["all_trials"] = trials
+            storage.save_session_data()
 
     st.session_state.trial_order = storage.session_data.get("trial_order")
     if not st.session_state.trial_order:
         st.session_state.trial_order = list(range(len(st.session_state.all_trials)))
+        random.shuffle(st.session_state.trial_order) 
         storage.session_data["trial_order"] = st.session_state.trial_order
         storage.save_session_data()
 
