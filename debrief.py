@@ -1,74 +1,94 @@
 # debrief_ui.py
 import streamlit as st
+from streamlit_extras.stylable_container import stylable_container
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
-import json, os, datetime
+import json, os, datetime, time
 from storage import Storage, save_to_github
+from helpers import htmlify
+
+def clear_session_for_next_participant():
+    """
+    Clears all session state and cache to prepare for the next participant.
+    """
+    keys_to_delete = list(st.session_state.keys())
+    for key in keys_to_delete:
+        del st.session_state[key]
+    
+    st.query_params.clear()
+    st.cache_data.clear()
+    st.cache_resource.clear()
+    st.stop()
 
 def show_debrief():
     """
     Displays the debrief screen and aggregate results for the participant.
-    """
-    st.title("Debrief and results")
-    
-    debrief_text = """ 
-    The message you received at the beginning of the experiment was part of a scenario designed 
-    to make the task feel realistic. In reality, there is no ongoing external attack or real streaming platform.
-
-    You were also shown affective images at the start of each trial. These images were selected from a standardized
-    database and were used to subtly influence emotional state before you listened to the recordings. This helps us 
-    understand how affect interacts with trust and detection performance. 
-    
-    The goal of this research is to better understand how trust, perception, and decision-making work when people encounter potential deepfakes in real time.
-    This knowledge will help in developing better detection tools in the future. 
-    
-    Please type in your Prolific ID so your results can be linked to your account.
-   
     """
     st.set_page_config(
         page_title="Debrief",
         layout="wide",
         initial_sidebar_state="collapsed"
     )
+    st.title("Debrief and results")
+    with st.sidebar:
+        debrief_text = """ 
+        The message you received at the beginning of the experiment was part of a scenario designed 
+        to make the task feel realistic. In reality, there is no ongoing external attack or real streaming platform.
 
-    st.markdown(debrief_text)
-    storage = st.session_state.get("storage")
-    if not storage:
-        storage = st.session_state.storage = Storage(st.session_state.participant_id)
-
-    all_trials = storage.load_all_trials()
-    print(all_trials)
-    all_summary = []
-
-    for trial_idx, data in all_trials.items():
-        trial = st.session_state.all_trials[trial_idx]
-        participant_segments = data.get("segments", [])
-        participant_flags = data.get("flags", [])
-        participant_responses = data.get("responses", {})
-
-        gt_type = data.get('gt_label', '').lower()  
-        gt_intervals = data.get('gt_segments', [])  
-        duration = float(trial.get("duration", 60.0))
-
-        summary = {
-            "trial_number": trial_idx+1,
-            "duration": duration,
-            "gt_type": gt_type,
-            "gt_intervals": gt_intervals,
-            "participant_segments": participant_segments,
-            "participant_flags": participant_flags,
-            "participant_responses": participant_responses
-        }
-        all_summary.append(summary)
-
-    if st.session_state.storage.prolific_id == "unknown":
+        You were also shown affective images at the start of each trial. These images were selected from a standardized
+        database and were used to subtly influence emotional state before you listened to the recordings. This helps us 
+        understand how affect interacts with trust and detection performance. 
+        
+        The goal of this research is to better understand how trust, perception, and decision-making work when people encounter potential deepfakes in real time.
+        This knowledge will help in developing better detection tools in the future. 
+        
+        Please type in your Prolific ID so your results can be linked to your account.
+        """
         st.markdown(
-            '<div style="color:black;font-size:16px;style:bold">Please enter your Prolific ID:</div>',
-            unsafe_allow_html=True
-        )
+            f"""
+        <div class="feed-card" style="padding: 12px 16px;">
+            <div style="font-size:10px; line-height:1.4; margin-top: 6px;">
+                {htmlify(debrief_text)}
+            </div>
+        </div>
+            """,
+            unsafe_allow_html=True)
 
-        _, input_col, _ = st.columns([0.3, 0.3, 0.3])
-        with input_col:
+        storage = st.session_state.get("storage")
+        if not storage:
+            storage = st.session_state.storage = Storage(st.session_state.participant_id)
+
+        all_trials = storage.load_all_trials()
+        print(all_trials)
+        all_summary = []
+
+        for trial_idx, data in all_trials.items():
+            trial = st.session_state.all_trials[trial_idx]
+            participant_segments = data.get("segments", [])
+            participant_flags = data.get("flags", [])
+            participant_responses = data.get("responses", {})
+
+            gt_type = data.get('gt_label', '').lower()  
+            gt_intervals = data.get('gt_segments', [])  
+            duration = float(trial.get("duration", 60.0))
+
+            summary = {
+                "trial_number": trial_idx+1,
+                "duration": duration,
+                "gt_type": gt_type,
+                "gt_intervals": gt_intervals,
+                "participant_segments": participant_segments,
+                "participant_flags": participant_flags,
+                "participant_responses": participant_responses
+            }
+            all_summary.append(summary)
+
+        if st.session_state.storage.prolific_id == "unknown":
+            st.markdown(
+                '<div style="color:white;font-size:16px;style:bold">Please enter your Prolific ID:</div>',
+                unsafe_allow_html=True
+            )
+
             prolific_input = st.text_input("Prolific ID", key="prolific_input")
 
             if prolific_input:
@@ -96,7 +116,7 @@ def show_debrief():
                     save_to_github(aggregate_metadata, github_path)
                     print("Uploaded aggregate to GitHub:", github_path)
                     st.rerun()
-
+                    
                     try:
                         os.remove(aggregate_out)
                         print("Deleted local:", aggregate_out)
@@ -115,6 +135,31 @@ def show_debrief():
     Below is a summary of your answers. 
     You can quit the application whenever you are ready.
     """)
+    with stylable_container( 
+        "save", 
+        css_styles=""" 
+        button { 
+        background-color: #B3BCB5 !important; 
+        color: black !important; 
+        border-radius: 5px !important; 
+        padding: 5px 5px !important; 
+        font-size: 14px !important; 
+        font-weight: bold !important; 
+        border: 2px solid #8A9A90 !important; 
+        cursor: pointer; 
+        box-shadow: 2px 2px 6px rgba(0,0,0,0.2); 
+        } button:
+        hover 
+        { background-color: #95A49A !important; 
+        box-shadow: 3px 3px 8px rgba(0,0,0,0.3); 
+        } 
+        """ ):
+        if st.button("Save & Quit"):
+            st.info("Resetting app for next participant...")
+            time.sleep(1)  
+            clear_session_for_next_participant()
+            st.rerun()
+
     for trial_idx, data in all_trials.items():
         trial = st.session_state.all_trials[trial_idx]
         participant_segments = data.get("segments", [])
