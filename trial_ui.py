@@ -9,7 +9,6 @@ from config import RESULTS_DIR, INSTRUCTIONS
 from debrief import show_debrief
 from storage import save_to_github
 import uuid, random, datetime, hashlib, time, os, json
-import cv2
 
 try:
     from pylsl import StreamInfo, StreamOutlet, local_clock
