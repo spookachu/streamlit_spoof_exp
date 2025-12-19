@@ -18,14 +18,15 @@ Your task is to flag any moments that sound synthetic, artificially generated, o
 
 For each audio clip:
 - Listen carefully; you may pause and replay as needed.
-- You can flag a specific timestamp or a suspicious audio segment.
+- If you hear something suspicious, you can flag a specific timestamp, an audio segment, or the entire audio clip.
 - Add multiple flags as needed, or remove flags if unsure.
+- The sliders are always as the same duration as the audio.
 - Complete a brief evaluation describing your overall impression of the clip.
 - Click "Next" to proceed to the next clip.
 
 There are 20 short recordings. Please do your best to detect synthetic or unusual audio. Your careful attention helps improve this platform.
 
-Please do not refresh the page to avoid losing progress. If you feel uncomfortable at any time, use the "Emergency Exit" button to quit the experiment.
+If you feel uncomfortable at any time, use the "Emergency Exit" button to quit the experiment.
 """,
     "monitor_attacks": """
     WARNING
@@ -36,14 +37,15 @@ Your task is to flag any moments that sound synthetic, artificially generated, o
 
 For each audio clip:
 - Listen carefully; you may pause and replay as needed.
-- You can flag a specific timestamp or a suspicious audio segment.
+- If you hear something suspicious, you can flag a specific timestamp, an audio segment, or the entire audio clip.
 - Add multiple flags as needed, or remove flags if unsure.
+- The sliders are always as the same duration as the audio.
 - Complete a brief evaluation describing your overall impression of the clip.
 - Click "Next" to proceed to the next clip.
 
 There are 20 short recordings. Please do your best to detect synthetic or unusual audio. Your careful attention helps keep users of this platform safe.
 
-Please do not refresh the page to avoid losing progress. If you feel uncomfortable at any time, use the "Emergency Exit" button to quit the experiment.
+If you feel uncomfortable at any time, use the "Emergency Exit" button to quit the experiment.
 """
 }
 
@@ -116,11 +118,6 @@ CARD_CSS = """
     background: #eef2ff;
     margin-right: 8px;
     font-size: 13px;
-}
-.video-wrapper {
-    border-radius:5px;
-    overflow: hidden;
-    margin-top: 5px;
 }
 </style>
 """

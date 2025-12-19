@@ -31,7 +31,7 @@ def init_session_state(test_subsample=None):
     st.query_params = {"participant_id": [participant_id]}
     
     if "storage" not in st.session_state:
-        st.session_state.storage = Storage(participant_id)
+        st.session_state.storage = Storage()
     storage = st.session_state.storage
 
     if storage.session_data.get("valence_condition"):

@@ -9,8 +9,8 @@ class Storage:
     """
     Handles saving and loading of participant session and trial data.
     """
-    def __init__(self, participant_id):
-        self.participant_id = participant_id
+    def __init__(self):
+        self.participant_id = st.session_state.participant_id
         self.prolific_id = st.session_state.prolific_id
         self.session_file = os.path.join(RESULTS_DIR, f"participant_{self.participant_id}_session.json")
         
@@ -18,17 +18,8 @@ class Storage:
             with open(self.session_file, "r") as f:
                 self.session_data = json.load(f)
         else:
-            self.session_data = {
-                "participant_id": participant_id,
-                "participant_id": participant_id,
-                "trial_index": 0,
-                "trial_order": [],
-                "affect_imgs": [],
-                "instruction_version": None,
-                "valence_condition": None,
-                "affect_imgs": None,
-                "timestamp": datetime.datetime.now().isoformat()
-            }
+            st.query_params = {}
+            self.session_data = {}
             self.save_session_data()
 
     def load_all_trials(self):
@@ -67,6 +58,7 @@ class Storage:
             "participant_id": st.session_state.participant_id,
             "instruction_version": st.session_state.instruction_version,
             "valence_condition": st.session_state.valence_condition,
+            "trust_cue": st.session_state.get("trust_cue", False),
 
             # Trial Metadata 
             "trial_index": trial_idx,

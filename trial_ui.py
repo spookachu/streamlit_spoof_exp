@@ -9,6 +9,7 @@ from config import RESULTS_DIR, INSTRUCTIONS
 from debrief import show_debrief
 from storage import save_to_github
 import uuid, random, datetime, hashlib, time, os, json
+import cv2
 
 try:
     from pylsl import StreamInfo, StreamOutlet, local_clock
@@ -50,11 +51,6 @@ def show_trial():
     st.markdown('<a id="top-of-page"></a>', unsafe_allow_html=True)
 
     participant_id = st.session_state.get("participant_id")
-    if not participant_id:
-        participant_id = hashlib.sha256(datetime.datetime.now().isoformat().encode()).hexdigest()[:10]
-        st.session_state.participant_id = participant_id
-        st.query_params = {"participant_id": [participant_id]}
-
     trial_idx = st.session_state.trial_index
     trial_start_key = f"trial_{trial_idx}_start_time"
     trial_start = datetime.datetime.now()
@@ -82,6 +78,14 @@ def show_trial():
     if f"trial_{trial_idx}_start_ts" not in st.session_state:
         st.session_state[f"trial_{trial_idx}_start_ts"] = time.time()
 
+    # trust source cue
+    if "trust_cue" not in trial:
+        trial_trust_cue = random.choice([True, False]) 
+        st.session_state.all_trials[st.session_state.trial_index]["trust_cue"] = trial_trust_cue
+    else:
+        trial_trust_cue = trial["trust_cue"]
+    st.session_state.trust_cue = trial_trust_cue
+
     instructions_html = htmlify(INSTRUCTIONS[st.session_state.instruction_version])
     with st.sidebar:
         st.markdown(
@@ -89,7 +93,7 @@ def show_trial():
         <div class="feed-card" style="padding: 12px 16px;">
             <div class="meta-row">
                 <div>
-                    <div class="meta-text">Platform Update</div>
+                    <div class="meta-text">INSTRUCTIONS</div>
                     <div class="small-muted">System · just now</div>
                 </div>
             </div>
@@ -100,6 +104,34 @@ def show_trial():
             """,
             unsafe_allow_html=True
         )
+        if "start_button_clicked" not in st.session_state:
+            st.session_state.start_button_clicked = False
+
+        if st.session_state.trial_index == 0 and not st.session_state.start_button_clicked:
+            with stylable_container(
+                "start",
+                css_styles="""
+                button { 
+                    background-color: #73FFC2 !important; 
+                    color: white !important; 
+                    font-size: 100px !important; 
+                    border-radius: 10px !important; 
+                    border: 2px solid #361F27 !important; 
+                    padding: 5px 10px; 
+                    cursor: pointer; 
+                    box-shadow: 2px 2px 6px rgba(0,0,0,0.2); 
+                } 
+                button:hover { 
+                    background-color: #85A0A8 !important; 
+                    box-shadow: 3px 3px 8px rgba(0,0,0,0.3); 
+                } 
+                """
+            ):
+                if st.button("I understand."):
+                    st.session_state.start_button_clicked = True
+                else:
+                    st.stop()  
+
 
     aff_col, quit_col = st.columns([0.6, 0.4])
     with quit_col: 
@@ -127,7 +159,7 @@ def show_trial():
                     st.rerun()       
 
     with aff_col:
-        c1, c2, c3 = st.columns([0.1, 0.6, 0.3])
+        c1, c2, c3 = st.columns([0.2, 0.6, 0.1])
 
         aff = trial.get("affect_image")
         quadrant = trial.get("quadrant", "")
@@ -139,135 +171,167 @@ def show_trial():
                 <div style="font-size:14px; font-weight:bold;"> Preview Audio Clip {trial_idx+1} / {len(st.session_state.trial_order)}</div>
             </div>
             """, unsafe_allow_html=True)
-            st.markdown('<div class="small-muted">source: social feed</div>', unsafe_allow_html=True)
+            if trial_trust_cue:
+                st.markdown("<div style='font-size:14px; color:green; font-weight:bold; margin-bottom:6px;'>Audio originating from a trusted source</div>", unsafe_allow_html=True)
 
             if aff and os.path.exists(aff):
-                st.image(aff, width=200)
+                st.image(aff, width=300)
             else:
                 st.markdown("<div class='small-muted'>No affect preview image available</div>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    media_col, question_col = st.columns([0.6, 0.4])
-    with media_col:
-        _, video_col, _ = st.columns([0.1, 0.8, 0.1])
-        with video_col:
-            st.markdown('<div class="video-wrapper">', unsafe_allow_html=True)
-            if trial.get('video') and os.path.exists(trial['video']):
-                st.video(trial['video'])
-            else:
-                st.warning("Video file not found or path invalid for this trial.")
-            st.markdown("#### Listen to the entire audio before making any choices.")
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-            # FLAGGING
-            st.markdown("### Mark suspicious segments")
-            segment_slider = st.slider(
-                "Select segment (start/end)",
-                0.0, duration,
-                value=(0.0, min(1.0, duration)),
-                step=0.01,
-                key=f"{trial_idx}_segment_slider",
-                on_change=lambda: log_action(trial_idx, "update_slider", slider=f"{trial_idx}_segment_slider")
-            )
-            with stylable_container("add_segment", css_styles="""
-                button {
-                    background-color: #f95738 !important;
-                    color: black !important;
-                    font-size: 14px !important;
-                    border-radius: 10px !important; 
-                    border: 2px solid #A53B3D !important;
-                    padding: 4px 10px;
-                    cursor: pointer;
-                    box-shadow: 2px 2px 6px rgba(0,0,0,0.2);
-                }
-                button:hover {
-                    background-color: #85A0A8 !important;
-                    box-shadow: 3px 3px 8px rgba(0,0,0,0.3);
-                }
-                """
-                ):
-                if st.button("Add segment", key=f"{trial_idx}_add_segment"):
-                    log_action(trial_idx, "add_segment", segment=f"{segment_slider[0]}-{segment_slider[1]}", id=str(uuid.uuid4()))
-                    st.session_state.segments_by_trial[trial_idx].append({ 
-                        "id": str(uuid.uuid4()), 
-                        "start": segment_slider[0], 
-                        "end": segment_slider[1],  
-                        "timestamp": datetime.datetime.now().isoformat() 
+    _, video_col, _ = st.columns([0.1, 0.8, 0.1])
+    with video_col:
+        st.markdown('<div class="video-wrapper">', unsafe_allow_html=True)
+        if trial.get('video') and os.path.exists(trial['video']):
+            st.video(trial['video'])
+        else:
+            st.warning("Video file not found or path invalid for this trial.")
+        st.markdown("#### Listen to the entire audio before making any choices.")
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # FLAGGING
+        st.markdown("### Mark suspicious segments")
+        segment_slider = st.slider(
+            "Select segment (start/end)",
+            0.0, duration,
+            value=(0.0, min(1.0, duration)),
+            step=0.01,
+            key=f"{trial_idx}_segment_slider",
+            on_change=lambda: log_action(trial_idx, "update_slider", slider=f"{trial_idx}_segment_slider")
+        )
+        with stylable_container("add_segment", css_styles="""
+            button {
+                background-color: #f95738 !important;
+                color: black !important;
+                font-size: 14px !important;
+                border-radius: 10px !important; 
+                border: 2px solid #A53B3D !important;
+                padding: 4px 10px;
+                cursor: pointer;
+                box-shadow: 2px 2px 6px rgba(0,0,0,0.2);
+            }
+            button:hover {
+                background-color: #85A0A8 !important;
+                box-shadow: 3px 3px 8px rgba(0,0,0,0.3);
+            }
+            """
+            ):
+            if st.button("Add segment", key=f"{trial_idx}_add_segment"):
+                log_action(trial_idx, "add_segment", segment=f"{segment_slider[0]}-{segment_slider[1]}", id=str(uuid.uuid4()))
+                st.session_state.segments_by_trial[trial_idx].append({ 
+                    "id": str(uuid.uuid4()), 
+                    "start": segment_slider[0], 
+                    "end": segment_slider[1],  
+                    "timestamp": datetime.datetime.now().isoformat() 
+                })
+
+        st.write("---")
+        # --- FLAGS ---
+        flag_slider = st.slider(
+            "Mark flag (timestamp)",
+            0.0, duration,
+            value=0.0,
+            step=0.01,
+            key=f"{trial_idx}_flag_slider",
+            on_change=lambda: log_action(trial_idx, "update_slider", slider=f"{trial_idx}_flag_slider")
+        )
+        with stylable_container("add_flag", css_styles="""
+            button {
+                background-color: #f95738 !important;
+                color: black !important;
+                font-size: 14px !important;
+                border-radius: 10px !important; 
+                border: 2px solid #A53B3D !important;
+                padding: 4px 10px;
+                cursor: pointer;
+                box-shadow: 2px 2px 6px rgba(0,0,0,0.2);
+            }
+            button:hover {
+                background-color: #85A0A8 !important;
+                box-shadow: 3px 3px 8px rgba(0,0,0,0.3);
+            }
+            """
+            ):
+            if st.button("Add flag", key=f"{trial_idx}_add_flag"):
+                log_action(trial_idx, "add_flag", flag=flag_slider, id=str(uuid.uuid4()))
+                st.session_state.flags_by_trial[trial_idx].append({ 
+                    "id": str(uuid.uuid4()), 
+                    "time": flag_slider, 
+                    "timestamp": datetime.datetime.now().isoformat() 
                     })
 
-            st.write("---")
-            # --- FLAGS ---
-            flag_slider = st.slider(
-                "Select flag (timestamp)",
-                0.0, duration,
-                value=0.0,
-                step=0.01,
-                key=f"{trial_idx}_flag_slider",
-                on_change=lambda: log_action(trial_idx, "update_slider", slider=f"{trial_idx}_flag_slider")
-            )
-            with stylable_container("add_flag", css_styles="""
-                button {
-                    background-color: #f95738 !important;
-                    color: black !important;
-                    font-size: 14px !important;
-                    border-radius: 10px !important; 
-                    border: 2px solid #A53B3D !important;
-                    padding: 4px 10px;
-                    cursor: pointer;
-                    box-shadow: 2px 2px 6px rgba(0,0,0,0.2);
-                }
-                button:hover {
-                    background-color: #85A0A8 !important;
-                    box-shadow: 3px 3px 8px rgba(0,0,0,0.3);
-                }
-                """
-                ):
-                if st.button("Add flag", key=f"{trial_idx}_add_flag"):
-                    log_action(trial_idx, "add_flag", flag=flag_slider, id=str(uuid.uuid4()))
-                    st.session_state.flags_by_trial[trial_idx].append({ 
-                        "id": str(uuid.uuid4()), 
-                        "time": flag_slider, 
-                        "timestamp": datetime.datetime.now().isoformat() 
-                        })
+        st.markdown("<hr style='border:1px solid #F5F5F5'>", unsafe_allow_html=True)
+        delete_col, plot_col = st.columns([0.5, 0.5])
 
-            st.markdown("<hr style='border:1px solid #F5F5F5'>", unsafe_allow_html=True)
-            delete_col, plot_col = st.columns([0.5, 0.5])
+        # Plot timeline
+        with plot_col:
+            fig_h, fig_w = 1.5, max(10, duration/5)
+            fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+            ax.set_xlim(0, duration)
+            ax.set_ylim(0, 1)
+            ax.axis("off")
 
-            # Plot timeline
-            with plot_col:
-                fig_h, fig_w = 1.5, max(10, duration/5)
-                fig, ax = plt.subplots(figsize=(fig_w, fig_h))
-                ax.set_xlim(0, duration)
-                ax.set_ylim(0, 1)
-                ax.axis("off")
+            ax.add_patch(Rectangle((0, 0.25), duration, 0.5, color="#eeeeee"))
+            for seg in st.session_state.segments_by_trial[trial_idx]:
+                ax.add_patch(Rectangle(
+                    (seg["start"], 0.25),
+                    max(1e-3, seg["end"] - seg["start"]),
+                    0.5,
+                    color=(0.0, 0.45, 0.8, 0.6)
+                ))
+                ax.text((seg["start"]+seg["end"])/2, 0.48, f"{seg['start']:.2f}-{seg['end']:.2f}s",
+                        ha="center", va="center", fontsize=8, color="white")
+            for flag in st.session_state.flags_by_trial[trial_idx]:
+                t = flag["time"]
+                ax.add_patch(Rectangle((t-0.01, 0.25), 0.02, 0.5, color=(1.0, 0.85, 0.2, 0.8)))
+                ax.text(t, 0.78, f"{t:.2f}s", ha="center", va="bottom", fontsize=8, color="orange")
 
-                ax.add_patch(Rectangle((0, 0.25), duration, 0.5, color="#eeeeee"))
-                for seg in st.session_state.segments_by_trial[trial_idx]:
-                    ax.add_patch(Rectangle(
-                        (seg["start"], 0.25),
-                        max(1e-3, seg["end"] - seg["start"]),
-                        0.5,
-                        color=(0.0, 0.45, 0.8, 0.6)
-                    ))
-                    ax.text((seg["start"]+seg["end"])/2, 0.48, f"{seg['start']:.2f}-{seg['end']:.2f}s",
-                            ha="center", va="center", fontsize=8, color="white")
-                for flag in st.session_state.flags_by_trial[trial_idx]:
-                    t = flag["time"]
-                    ax.add_patch(Rectangle((t-0.01, 0.25), 0.02, 0.5, color=(1.0, 0.85, 0.2, 0.8)))
-                    ax.text(t, 0.78, f"{t:.2f}s", ha="center", va="bottom", fontsize=8, color="orange")
+            st.pyplot(fig, bbox_inches="tight")
 
-                st.pyplot(fig, bbox_inches="tight")
+        # Delete list
+        with delete_col:
+            st.markdown("##### Current Segments")
+            seg_to_delete = []
+            for seg in st.session_state.segments_by_trial[trial_idx][:]:
+                c1, c2, c3 = st.columns([0.3, 0.2, 0.4])
+                with c1:
+                    st.write(f"Segment: {seg['start']:.2f} - {seg['end']:.2f}s")
+                with c2:
+                    with stylable_container(f"delete_seg_{seg['id']}", css_styles="""
+                        button {
+                            background-color: #B0C6CE !important;
+                            color: black !important;
+                            font-size: 16px !important;
+                            border-radius: 10px !important; 
+                            border: 2px solid #82A4B0 !important;
+                            padding: 5px 10px;
+                            cursor: pointer;
+                            box-shadow: 2px 2px 6px rgba(0,0,0,0.2);
+                        }
+                        button:hover {
+                            background-color: #85A0A8 !important;
+                            box-shadow: 3px 3px 8px rgba(0,0,0,0.3);
+                        }
+                        """
+                    ):
+                        if st.button("Delete", key=f"{trial_idx}_del_seg_{seg['id']}"):
+                            seg_to_delete.append(seg['id'])
+                            log_action(trial_idx, "delete_segment", deleted_segment=seg['id'])
+                            st.write("Confirm deletion?")
+            if seg_to_delete:
+                st.session_state.segments_by_trial[trial_idx] = [
+                    s for s in st.session_state.segments_by_trial[trial_idx] if s['id'] not in seg_to_delete
+                ]
 
-            # Delete list
-            with delete_col:
-                st.markdown("##### Current Segments")
-                seg_to_delete = []
-                for seg in st.session_state.segments_by_trial[trial_idx][:]:
-                    c1, c2, c3 = st.columns([0.3, 0.2, 0.4])
-                    with c1:
-                        st.write(f"Segment: {seg['start']:.2f} - {seg['end']:.2f}s")
-                    with c2:
-                        with stylable_container(f"delete_seg_{seg['id']}", css_styles="""
+            st.markdown("##### Current Flags")
+            flags_to_delete = []
+            for flag in st.session_state.flags_by_trial[trial_idx][:]: 
+                c1, c2, c3 = st.columns([0.3, 0.2, 0.4])
+                with c1:
+                    st.write(f"Flag: {flag['time']:.2f}s")
+                with c2:
+                    with stylable_container(f"delete_flag_{flag['id']}",  css_styles="""
                             button {
                                 background-color: #B0C6CE !important;
                                 color: black !important;
@@ -284,55 +348,19 @@ def show_trial():
                             }
                             """
                         ):
-                            if st.button("Delete", key=f"{trial_idx}_del_seg_{seg['id']}"):
-                                seg_to_delete.append(seg['id'])
-                                log_action(trial_idx, "delete_segment", deleted_segment=seg['id'])
-                                st.write("Confirm deletion?")
-                if seg_to_delete:
-                    st.session_state.segments_by_trial[trial_idx] = [
-                        s for s in st.session_state.segments_by_trial[trial_idx] if s['id'] not in seg_to_delete
-                    ]
+                        if st.button("Delete", key=f"{trial_idx}_del_flag_{flag['id']}"):
+                            flags_to_delete.append(flag['id'])
+                            log_action(trial_idx, "delete_flag", deleted_ids=flag['id'])
+                            st.write("Confirm deletion?")
+            if flags_to_delete:
+                st.session_state.flags_by_trial[trial_idx] = [f for f in st.session_state.flags_by_trial[trial_idx] if f['id'] not in flags_to_delete]
 
-                st.markdown("##### Current Flags")
-                flags_to_delete = []
-                for flag in st.session_state.flags_by_trial[trial_idx][:]: 
-                    c1, c2, c3 = st.columns([0.3, 0.2, 0.4])
-                    with c1:
-                        st.write(f"Flag: {flag['time']:.2f}s")
-                    with c2:
-                        with stylable_container(f"delete_flag_{flag['id']}",  css_styles="""
-                                button {
-                                    background-color: #B0C6CE !important;
-                                    color: black !important;
-                                    font-size: 16px !important;
-                                    border-radius: 10px !important; 
-                                    border: 2px solid #82A4B0 !important;
-                                    padding: 5px 10px;
-                                    cursor: pointer;
-                                    box-shadow: 2px 2px 6px rgba(0,0,0,0.2);
-                                }
-                                button:hover {
-                                    background-color: #85A0A8 !important;
-                                    box-shadow: 3px 3px 8px rgba(0,0,0,0.3);
-                                }
-                                """
-                            ):
-                            if st.button("Delete", key=f"{trial_idx}_del_flag_{flag['id']}"):
-                                flags_to_delete.append(flag['id'])
-                                log_action(trial_idx, "delete_flag", deleted_ids=flag['id'])
-                                st.write("Confirm deletion?")
-                if flags_to_delete:
-                    st.session_state.flags_by_trial[trial_idx] = [
-                        f for f in st.session_state.flags_by_trial[trial_idx] if f['id'] not in flags_to_delete
-                    ]
+        # EVALUATION
+        sanity_key = f"trial{trial_idx}_sanity"
+        if sanity_key not in st.session_state:
+            st.session_state[sanity_key] = random.choice([False, False, True])
+        sanity_check = st.session_state[sanity_key]
 
-    # EVALUATION
-    sanity_key = f"trial{trial_idx}_sanity"
-    if sanity_key not in st.session_state:
-        st.session_state[sanity_key] = random.choice([False, False, True])
-    sanity_check = st.session_state[sanity_key]
-
-    with question_col:
         st.markdown("### Evaluate the audio")
 
         questions = [
@@ -345,14 +373,14 @@ def show_trial():
         ]
 
         if sanity_check:
-            questions.append("What instructions were you given for this task?")
+            questions.append("What scenario were you given for this task?")
 
         options = ["Completely \n Disagree", "Disagree", "Unsure", "Agree", "Completely \n Agree"]
-        sanity_options = ["Defending against audio attacks.", 
-                          "Evaluating new technology.", 
-                          "I don't know.", 
-                          "Creating new synthetic voices.",
-                          "Moderating for offensive language."]
+        sanity_options = ["Monitoring for audio attacks.", 
+                            "Evaluating new technology.", 
+                            "I did not pay attention.", 
+                            "Creating new synthetic voices.",
+                            "Moderating for offensive language."]
 
         if trial_idx not in st.session_state.responses_by_trial:
             st.session_state.responses_by_trial[trial_idx] = {}
@@ -414,64 +442,68 @@ def show_trial():
                         log_action(trial_idx, "eval_response", question=q, old_answer=None, new_answer=selected)
             i += 2
 
-        st.markdown("<br><br><br>", unsafe_allow_html=True)
-        _, next_col = st.columns([0.8, 0.2])
-        with next_col:
-            with stylable_container( 
-                "next", 
-                css_styles=""" 
-                button { 
-                background-color: #B3BCB5 !important; 
-                color: black !important; 
-                border-radius: 5px !important; 
-                padding: 5px 5px !important; 
-                font-size: 14px !important; 
-                font-weight: bold !important; 
-                border: 2px solid #8A9A90 !important; 
-                cursor: pointer; 
-                box-shadow: 2px 2px 6px rgba(0,0,0,0.2); 
-                } button:
-                hover 
-                { background-color: #95A49A !important; 
-                box-shadow: 3px 3px 8px rgba(0,0,0,0.3); 
-                } 
-                """ ):
-                    if st.button("Save and Continue"):
-                        trial_idx = st.session_state.trial_index
-                        trial_end = datetime.datetime.now()
-                        trial_end_key = f"trial_{trial_idx}_end_time"
-                        if trial_end_key not in st.session_state:
-                            st.session_state[trial_end_key] = datetime.datetime.now().isoformat()
-                        trial_duration_key = f"trial_{trial_idx}_duration"
-                        if trial_duration_key not in st.session_state:
-                            st.session_state[trial_duration_key] = (trial_end - trial_start).total_seconds()
-                    
-                        required_wait = float(trial.get("duration", 0))
-                        validity_info = compute_answer_validity(trial_idx, required_wait)
-                        trial_data = st.session_state.storage.save_trial(trial_idx, extra_metadata=validity_info)
-                        st.session_state.trial_index += 1
-                        st.session_state.storage.session_data["trial_index"] = st.session_state.trial_index
-                        st.session_state.storage.save_session_data()
-                        file_name = f"participant_{st.session_state.participant_id}_trial_{trial_idx}.json"
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    _, next_col = st.columns([0.8, 0.2])
+    with next_col:
+        with stylable_container( 
+            "next", 
+            css_styles=""" 
+            button { 
+            background-color: #B3BCB5 !important; 
+            color: black !important; 
+            border-radius: 5px !important; 
+            padding: 5px 5px !important; 
+            font-size: 14px !important; 
+            font-weight: bold !important; 
+            border: 2px solid #8A9A90 !important; 
+            cursor: pointer; 
+            box-shadow: 2px 2px 6px rgba(0,0,0,0.2); 
+            } button:
+            hover 
+            { background-color: #95A49A !important; 
+            box-shadow: 3px 3px 8px rgba(0,0,0,0.3); 
+            } 
+            """ ):
+                if st.button("Save and Continue"):
+                    trial_idx = st.session_state.trial_index
+                    trial_end = datetime.datetime.now()
+                    trial_end_key = f"trial_{trial_idx}_end_time"
+                    if trial_end_key not in st.session_state:
+                        st.session_state[trial_end_key] = datetime.datetime.now().isoformat()
+                    trial_duration_key = f"trial_{trial_idx}_duration"
+                    if trial_duration_key not in st.session_state:
+                        st.session_state[trial_duration_key] = (trial_end - trial_start).total_seconds()
 
-                        try:
-                            save_to_github(trial_data, f"results/{os.path.basename(file_name)}")
-                            os.remove(file_name)
-                            print("Deleted local file:", file_name)
-                        except Exception as e:
-                            print("Failed to delete local file:", e)
-                            print("Upload failed; local file kept:", file_name)
-                            
-                        log_action(trial_idx, "next_trial")
+                    required_wait = float(trial.get("duration", 0))
+                    validity_info = compute_answer_validity(trial_idx, required_wait)
+                    trial_data = st.session_state.storage.save_trial(trial_idx, extra_metadata=validity_info)
+                    st.session_state.trial_index += 1
+                    st.session_state.storage.session_data["trial_index"] = st.session_state.trial_index
+                    st.session_state.storage.save_session_data()
                     
-                        components_html( 
-                        """ 
-                        <script> 
-                            window.location.hash = "top"; 
-                            window.parent.location.reload(); 
-                        </script> """, 
-                        height=0, )
-                        #st.rerun()
+                    file_name = f"{st.session_state.participant_id}_trial_{trial_idx}.json"
+                    github_path = f"results/{file_name}"
+
+                    try:
+                        save_to_github(trial_data, github_path)
+                        local_file = os.path.join(RESULTS_DIR, file_name)
+                        if os.path.exists(local_file):
+                            os.remove(local_file)
+                            print(f"Deleted local file: {file_name}")
+                    except Exception as e:
+                        print(f"Upload failed: {e}")
+                        print(f"Local file kept: {file_name}")
+                        
+                    log_action(trial_idx, "next_trial")
+                
+                    components_html( 
+                    """ 
+                    <script> 
+                        window.location.hash = "top"; 
+                        window.parent.location.reload(); 
+                    </script> """, 
+                    height=0, )
+                    #st.rerun()
                     
     st.markdown("---")
     st.caption(f"Participant: {participant_id} · On trial {st.session_state.trial_index+1} of {len(st.session_state.trial_order)}")
