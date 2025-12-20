@@ -355,6 +355,7 @@ def show_trial():
                 st.session_state.flags_by_trial[trial_idx] = [f for f in st.session_state.flags_by_trial[trial_idx] if f['id'] not in flags_to_delete]
 
         # EVALUATION
+        # EVALUATION
         sanity_key = f"trial{trial_idx}_sanity"
         if sanity_key not in st.session_state:
             st.session_state[sanity_key] = random.choice([False, False, True])
@@ -385,8 +386,8 @@ def show_trial():
             st.session_state.responses_by_trial[trial_idx] = {}
 
         for q in questions:
-            if "instructions" in q:  
-                st.session_state.responses_by_trial[trial_idx].setdefault(q, sanity_options[2])  # "I don't know"
+            if "scenario" in q.lower() or "instructions" in q.lower():  
+                st.session_state.responses_by_trial[trial_idx].setdefault(q, sanity_options[2])  # "I did not pay attention."
             else:
                 st.session_state.responses_by_trial[trial_idx].setdefault(q, options[2])  # "Unsure"
 
@@ -415,7 +416,7 @@ def show_trial():
 
                     radio_key = f"trial{trial_idx}_question_{q_index}"
 
-                    if "instructions" in q:
+                    if "scenario" in q.lower() or "instructions" in q.lower():
                         selected = st.radio(
                             label=" ",
                             options=sanity_options,
@@ -481,7 +482,7 @@ def show_trial():
                     st.session_state.storage.save_session_data()
                     
                     file_name = f"{st.session_state.participant_id}_trial_{trial_idx}.json"
-                    github_path = f"results/{file_name}"
+                    github_path = f"results/full_run/{file_name}"
 
                     try:
                         save_to_github(trial_data, github_path)
